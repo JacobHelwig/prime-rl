@@ -6,7 +6,33 @@ project = "hendrycks-math-debug"
 name = "hendrycks-math"
 
 [model]
-name = "Qwen/Qwen3-4B-Instruct-2507"
+name = "Qwen/Qwen3-0.6B"
+
+[trainer.tokenizer]
+name = "Qwen/Qwen3-0.6B"
+
+[trainer.model]
+optimization_dtype = "bfloat16"
+reduce_dtype = "bfloat16"
+
+[deployment]
+type = "single_node"
+gpus_per_node = 2
+num_train_gpus = 1
+num_infer_gpus = 1
+
+[slurm]
+job_name = "hendrycks-math-qwen0.6b"
+partition = "short"
+time = "4:00:00"
+pre_run_command = """
+source /etc/profile
+module load CUDA/12.8.0
+export CUDA_HOME=/sw/eb/sw/CUDA/12.8.0
+export CUDACXX=$CUDA_HOME/bin/nvcc
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+"""
 
 [orchestrator]
 batch_size = 512
@@ -42,4 +68,3 @@ rollouts_per_example = 4
 [trainer] # Default trainer config
 
 [inference] # Default inference config
-
