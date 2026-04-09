@@ -113,6 +113,8 @@ def packed_samples_into_micro_bs(
                 continue
             # Check if sequence fits in this bin
             if len(bin_content.input_ids) + len(sample.input_ids) <= max_seq_len:
+                bin_len = len(bin_content.input_ids)
+                sample_len = len(sample.input_ids)
                 bin_content.input_ids.extend(sample.input_ids)
                 bin_content.loss_mask.extend(sample.loss_mask)
                 bin_content.advantages.extend(sample.advantages)
@@ -126,6 +128,13 @@ def packed_samples_into_micro_bs(
                     if bin_content.routed_experts is None:
                         bin_content.routed_experts = []
                     bin_content.routed_experts.extend(sample.routed_experts)
+                if sample.mm_token_type_ids is not None or bin_content.mm_token_type_ids is not None:
+                    if bin_content.mm_token_type_ids is None:
+                        bin_content.mm_token_type_ids = [0] * bin_len
+                    if sample.mm_token_type_ids is None:
+                        bin_content.mm_token_type_ids.extend([0] * sample_len)
+                    else:
+                        bin_content.mm_token_type_ids.extend(sample.mm_token_type_ids)
                 bin_content.position_ids.extend(sample.position_ids)
                 bin_content.lora_num_tokens[idx] += len(sample.input_ids)
                 break

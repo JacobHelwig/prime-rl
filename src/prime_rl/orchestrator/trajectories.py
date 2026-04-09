@@ -298,7 +298,9 @@ def interleave_rollout(
                 "completion_ids": list(tokens["completion_ids"]),
                 "completion_mask": [bool(i) for i in tokens["completion_mask"]],
                 "completion_logprobs": list(tokens["completion_logprobs"]),
-                "mm_token_type_ids": list(tokens["mm_token_type_ids"]) if tokens.get("mm_token_type_ids") else None,
+                "mm_token_type_ids": list(tokens["mm_token_type_ids"])
+                if tokens.get("mm_token_type_ids") is not None
+                else None,
                 "routed_experts": tokens.get("routed_experts"),
             }
 
