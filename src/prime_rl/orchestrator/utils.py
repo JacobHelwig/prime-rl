@@ -81,9 +81,21 @@ async def compute_teacher_logprobs(
     async def _compute_single(client_config: vf.ClientConfig, sample: TrainingSample) -> list[float]:
         client = setup_openai_client(client_config)
 
-        response = await client.post(
-            "/chat/completions/tokens",
-            body={
+        # TODO: we can always use messages? 
+        if sample.prompt_messages is not None and sample.teacher_completion_ids is not None:
+            body = {
+                "model": model_name,
+                "messages": sample.prompt_messages,
+                "tokens": sample.teacher_completion_ids,
+                "use_messages": True,
+                "max_tokens": 1,
+                "temperature": 1.0,
+                "top_p": 1.0,
+                "skip_special_tokens": False,
+                "prompt_logprobs": True,
+            }
+        else:
+            body = {
                 "model": model_name,
                 "messages": [{"role": "user", "content": ""}],
                 "tokens": sample.prompt_ids + sample.completion_ids,
@@ -92,7 +104,11 @@ async def compute_teacher_logprobs(
                 "top_p": 1.0,
                 "skip_special_tokens": False,
                 "prompt_logprobs": True,
-            },
+            }
+
+        response = await client.post(
+            "/chat/completions/tokens",
+            body=body,
             cast_to=ChatCompletion,
         )
         return [

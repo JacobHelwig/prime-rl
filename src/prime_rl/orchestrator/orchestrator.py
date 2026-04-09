@@ -1,4 +1,5 @@
 import asyncio
+from copy import deepcopy
 import gc
 import os
 import time
@@ -400,6 +401,14 @@ async def orchestrate(config: OrchestratorConfig):
         generate_completions_time = scheduler.last_batch_generation_time
         train_rollouts = train_task.result()
 
+        # TODO: comment
+        preserved_prompt_messages_by_rollout = None
+        if is_vlm and config.teacher_model and teacher_inference_pool: # TODO: do we need to check both conditions?
+            preserved_prompt_messages_by_rollout = [
+                [deepcopy(step.get("prompt")) for step in rollout.get("trajectory", [])]
+                for rollout in train_rollouts
+            ]
+
         # VLM: offload base64 images to disk immediately to free memory
         if is_vlm:
             offload_start = time.perf_counter()
@@ -448,7 +457,16 @@ async def orchestrate(config: OrchestratorConfig):
 
         # Process rollouts in parallel
         def process_rollout(rollout: vf.RolloutOutput, rollout_idx: int) -> list[TrainingSample] | None:
-            return interleave_rollout(rollout, vlm_cache=vlm_cache, cache_key=rollout_idx)
+            # TODO: comment
+            prompt_messages_by_step = None
+            if preserved_prompt_messages_by_rollout is not None:
+                prompt_messages_by_step = preserved_prompt_messages_by_rollout[rollout_idx]
+            return interleave_rollout(
+                rollout,
+                vlm_cache=vlm_cache,
+                cache_key=rollout_idx,
+                preserved_prompt_messages_by_step=prompt_messages_by_step,
+            )
 
         loop = asyncio.get_event_loop()
         futures = [
@@ -504,6 +522,11 @@ async def orchestrate(config: OrchestratorConfig):
                 train_example.teacher_logprobs = teacher_logprobs
             teacher_logprobs_time = time.perf_counter() - teacher_logprobs_start_time
             logger.debug(f"Computed teacher logprobs in {teacher_logprobs_time:.2f}s")
+
+        # TODO: comment
+        for train_example in train_examples:
+            train_example.prompt_messages = None
+            train_example.teacher_completion_ids = None
 
         training_batch = TrainingBatch(
             examples=train_examples,

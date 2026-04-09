@@ -1,3 +1,5 @@
+from typing import Any
+
 import msgspec
 
 
@@ -14,6 +16,8 @@ class TrainingSample(msgspec.Struct, array_like=True, gc=False, omit_defaults=Tr
     teacher_logprobs: list[float] | None = None
     advantage: float | None = None
     reward: float | None = None
+    prompt_messages: list[dict[str, Any]] | None = None
+    teacher_completion_ids: list[int] | None = None
 
     # Multimodal fields (Qwen3-VL) — pixel_values stored as raw float32 bytes for efficient serialization
     pixel_values: bytes | None = None
