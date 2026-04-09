@@ -23,6 +23,7 @@ def prepare_sample(training_example: TrainingSample, seq_len: int) -> MicroBatch
     # computed via prefill in the orchestrator when a teacher model is configured
     teacher_logprobs = training_example.teacher_logprobs
     routed_experts = training_example.routed_experts
+    mm_token_type_ids = training_example.mm_token_type_ids
 
     if len(input_ids) > seq_len:
         input_ids = input_ids[:seq_len]
@@ -35,6 +36,8 @@ def prepare_sample(training_example: TrainingSample, seq_len: int) -> MicroBatch
             teacher_logprobs = teacher_logprobs[:seq_len]
         if routed_experts is not None:
             routed_experts = routed_experts[:seq_len]
+        if mm_token_type_ids is not None:
+            mm_token_type_ids = mm_token_type_ids[:seq_len]
 
     assert (
         len(input_ids)
@@ -48,6 +51,8 @@ def prepare_sample(training_example: TrainingSample, seq_len: int) -> MicroBatch
     )
     if teacher_logprobs is not None:
         assert len(teacher_logprobs) == len(input_ids), f"teacher_logprobs: {len(teacher_logprobs)}"
+    if mm_token_type_ids is not None:
+        assert len(mm_token_type_ids) == len(input_ids), f"mm_token_type_ids: {len(mm_token_type_ids)}"
 
     if routed_experts is not None:
         assert len(routed_experts) == len(input_ids), (
@@ -67,6 +72,7 @@ def prepare_sample(training_example: TrainingSample, seq_len: int) -> MicroBatch
         pixel_values=training_example.pixel_values,
         pixel_values_shape=training_example.pixel_values_shape,
         image_grid_thw=training_example.image_grid_thw,
+        mm_token_type_ids=mm_token_type_ids,
     )
 
 
@@ -156,6 +162,8 @@ def pad_micro_batch(micro_batch: MicroBatch, pad_to_multiple_of: int) -> MicroBa
     micro_batch.temperatures.extend([1.0] * padding_size)
     if micro_batch.teacher_logprobs is not None:
         micro_batch.teacher_logprobs.extend([0.0] * padding_size)
+    if micro_batch.mm_token_type_ids is not None:
+        micro_batch.mm_token_type_ids.extend([0] * padding_size)
     micro_batch.lora_num_tokens[-1] += (
         padding_size  # We send padding to the last lora so that tokens have ascending lora idx
     )

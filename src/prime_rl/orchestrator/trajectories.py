@@ -50,6 +50,18 @@ def _common_prefix_len(a: list[int], b: list[int]) -> int:
     return common_prefix_len(a, b)
 
 
+def _create_mm_token_type_ids_single(processor, input_ids: list[int]) -> list[int] | None:
+    create_fn = getattr(processor, "create_mm_token_type_ids", None)
+    if create_fn is None:
+        return None
+    mm_token_type_ids = create_fn([input_ids])
+    assert len(mm_token_type_ids) == 1, (
+        "processor.create_mm_token_type_ids must return exactly one sequence "
+        f"for a single input sequence, got {len(mm_token_type_ids)}"
+    )
+    return list(mm_token_type_ids[0])
+
+
 def _normalize_messages(messages: Any, default_role: str) -> list[dict[str, Any]]:
     return normalize_messages(messages, default_role)
 
@@ -154,6 +166,7 @@ def _tokenize_step_from_messages(
         tools=tools,
         processor=processor,
     )
+    mm_token_type_ids = _create_mm_token_type_ids_single(processor, full_ids) if processor is not None else None
 
     split_idx = _common_prefix_len(prompt_ids, full_ids)
     original_prompt_len = len(prompt_ids)
@@ -169,6 +182,7 @@ def _tokenize_step_from_messages(
         "completion_ids": completion_ids,
         "completion_mask": completion_mask,
         "completion_logprobs": completion_logprobs,
+        "mm_token_type_ids": mm_token_type_ids,
         "routed_experts": None,
         "prompt_prefix_len": split_idx,
         "original_prompt_len": original_prompt_len,
@@ -210,6 +224,11 @@ def pretokenize_rollout_trajectory(
 
     for step_idx, step in enumerate(output["trajectory"]):
         if step["tokens"] is not None:
+            if processor is not None:
+                full_ids = list(step["tokens"]["prompt_ids"]) + list(step["tokens"]["completion_ids"])
+                mm_token_type_ids = _create_mm_token_type_ids_single(processor, full_ids)
+                if mm_token_type_ids is not None:
+                    step["tokens"]["mm_token_type_ids"] = mm_token_type_ids
             continue
 
         reconstructed = _tokenize_step_from_messages(step, tokenizer, tools=tools, processor=processor)
@@ -279,6 +298,7 @@ def interleave_rollout(
                 "completion_ids": list(tokens["completion_ids"]),
                 "completion_mask": [bool(i) for i in tokens["completion_mask"]],
                 "completion_logprobs": list(tokens["completion_logprobs"]),
+                "mm_token_type_ids": list(tokens["mm_token_type_ids"]) if tokens.get("mm_token_type_ids") else None,
                 "routed_experts": tokens.get("routed_experts"),
             }
 
@@ -314,6 +334,9 @@ def interleave_rollout(
             completion_temperatures=[temperature] * len(completion_ids),
             teacher_logprobs=None,
             advantage=None,
+            mm_token_type_ids=list(tokens["mm_token_type_ids"])
+            if tokens.get("mm_token_type_ids") is not None
+            else None,
             routed_experts=routed_experts,
         )
 
@@ -349,6 +372,9 @@ def interleave_rollout(
             sample.routed_experts.extend(step_routed[prefix_len:])
             expected_len = len(sample.prompt_ids) + len(sample.completion_ids)
             sample.routed_experts = _align_routed_experts(sample.routed_experts, expected_len)
+
+        if tokens.get("mm_token_type_ids") is not None:
+            sample.mm_token_type_ids = list(tokens["mm_token_type_ids"])
 
     # Track [prefix_tokens, sample, last_step_idx] per active sample
     active_samples: list[list] = []
