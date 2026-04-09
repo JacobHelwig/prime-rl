@@ -1,0 +1,56 @@
+# 2-GPU smoke test: teacher points at the same local inference server as the student.
+# This exercises the multimodal teacher-logprob path without a separate teacher server.
+max_steps = 3
+seq_len = 2048
+max_async_level = 0
+output_dir = "outputs/rl_color_codeword_opd_qwen3_vl_2b_2gpu"
+
+[deployment]
+type = "single_node"
+gpus_per_node = 2
+num_train_gpus = 1
+num_infer_gpus = 1
+
+[model]
+name = "Qwen/Qwen3-VL-2B-Instruct"
+
+[model.vlm]
+vision_encoder_attr = "model.visual"
+language_model_attr = "model.language_model"
+
+[orchestrator]
+batch_size = 16
+rollouts_per_example = 2
+use_token_client = true
+
+[orchestrator.teacher_model.client]
+base_url = ["http://localhost:8000/v1"]
+
+[orchestrator.teacher_model.model]
+name = "Qwen/Qwen3-VL-2B-Instruct"
+
+[orchestrator.train.sampling]
+max_completion_tokens = 32
+
+[[orchestrator.train.env]]
+id = "color-codeword"
+args = { images_per_turn = 1, max_turns = 2, num_examples = 100, seed = 42 }
+
+[trainer.model]
+optimization_dtype = "bfloat16"
+reduce_dtype = "bfloat16"
+
+[trainer.optim]
+lr = 3e-6
+
+[trainer.loss]
+teacher_tau = 0.5
+
+[inference]
+use_deep_gemm = false
+
+[inference.parallel]
+dp = 1
+
+[inference.model]
+max_model_len = 2048
