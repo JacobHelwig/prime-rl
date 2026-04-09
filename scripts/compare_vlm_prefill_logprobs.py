@@ -19,8 +19,8 @@ Usage:
 
 The script sends two requests to a running local inference server:
 1. Standard `/v1/chat/completions` with the full multimodal conversation.
-2. Experimental `/v1/chat/completions/suffix_tokens` with the multimodal
-   prompt rendered first and the assistant continuation appended as token IDs.
+2. Experimental `/v1/chat/completions/tokens` with the multimodal prompt
+   rendered first and the assistant continuation supplied as token IDs.
 """
 
 import argparse
@@ -412,7 +412,8 @@ def main() -> None:
     mixed_payload = {
         "model": args.model,
         "messages": prompt_only_request_messages,
-        "tokens_suffix": suffix_tokens,
+        "tokens": suffix_tokens,
+        "use_messages": True,
         "max_tokens": 1,
         "temperature": 0.0,
         "top_p": 1.0,
@@ -422,7 +423,7 @@ def main() -> None:
     }
 
     baseline = post_json(f"{args.base_url.rstrip('/')}/v1/chat/completions", baseline_payload, args.timeout)
-    mixed = post_json(f"{args.base_url.rstrip('/')}/v1/chat/completions/suffix_tokens", mixed_payload, args.timeout)
+    mixed = post_json(f"{args.base_url.rstrip('/')}/v1/chat/completions/tokens", mixed_payload, args.timeout)
 
     baseline_prompt_logprobs = baseline["prompt_logprobs"]
     mixed_prompt_logprobs = mixed["prompt_logprobs"]

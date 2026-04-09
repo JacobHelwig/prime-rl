@@ -15,6 +15,7 @@ from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.reasoning import ReasoningParser
 from vllm.sampling_params import BeamSearchParams, SamplingParams
+from vllm.renderers.inputs.preprocess import PromptComponents
 
 logger = init_logger(__name__)
 
@@ -46,12 +47,7 @@ class _RoutedExpertsCapture:
 class ChatCompletionRequestWithTokens(ChatCompletionRequest):
     field_names: ClassVar[Optional[set[str]]] = None
     tokens: list[int] = Field(description=("Prompt tokens to use for the request."))
-
-
-class ChatCompletionRequestWithSuffixTokens(ChatCompletionRequest):
-    field_names: ClassVar[Optional[set[str]]] = None
-    tokens_suffix: list[int] = Field(description=("Token suffix to append after rendering the chat prompt."))
-
+    use_messages: bool = False
 
 class OpenAIServingChatWithTokens(OpenAIServingChat):
     """OpenAI-compatible generate API that allows token-in and routed experts capture."""
@@ -95,37 +91,10 @@ class OpenAIServingChatWithTokens(OpenAIServingChat):
 
         return response
 
-    def _override_prompt_tokens(
+    async def create_chat_completion_with_tokens(
         self,
-        engine_prompts: list,
-        *,
-        prompt_token_ids: list[int] | None = None,
-        tokens_suffix: list[int] | None = None,
-    ) -> None:
-        if len(engine_prompts) != 1:
-            raise ValueError("Token override requests currently support exactly one rendered prompt.")
-
-        if prompt_token_ids is not None and tokens_suffix is not None:
-            raise ValueError("Specify either prompt_token_ids or tokens_suffix, not both.")
-
-        if prompt_token_ids is not None:
-            engine_prompts[0]["prompt_token_ids"] = prompt_token_ids  # type: ignore[index]
-            return
-
-        if tokens_suffix is None:
-            raise ValueError("Expected either prompt_token_ids or tokens_suffix.")
-
-        prompt_components = self._extract_prompt_components(engine_prompts[0])
-        base_prompt_token_ids = list(prompt_components.token_ids or [])
-        engine_prompts[0]["prompt_token_ids"] = base_prompt_token_ids + list(tokens_suffix)  # type: ignore[index]
-
-    async def _create_chat_completion_with_prompt_override(
-        self,
-        request: ChatCompletionRequest,
+        request: ChatCompletionRequestWithTokens,
         raw_request: Optional[Request] = None,
-        *,
-        prompt_token_ids: list[int] | None = None,
-        tokens_suffix: list[int] | None = None,
     ) -> Union[AsyncGenerator[str, None], ChatCompletionResponse, ErrorResponse]:
         """
         Chat Completion API similar to OpenAI's API.
@@ -158,11 +127,16 @@ class OpenAIServingChatWithTokens(OpenAIServingChat):
 
         conversation, engine_prompts = result
 
-        self._override_prompt_tokens(
-            engine_prompts,
-            prompt_token_ids=prompt_token_ids,
-            tokens_suffix=tokens_suffix,
-        )
+        if request.use_messages is not None:
+            prompt_components: PromptComponents = self._extract_prompt_components(engine_prompts[0])
+            prompt_token_ids = prompt_components.token_ids
+            assert prompt_token_ids is not None
+            request.tokens = prompt_token_ids + request.tokens
+
+        # We override prompt tokens directly.
+        # VLM conversations use MITO (message-based) instead of TITO, so
+        # multi_modal_data is not expected here.
+        engine_prompts[0]["prompt_token_ids"] = request.tokens  # type: ignore
 
         request_id = f"chatcmpl-{self._base_request_id(raw_request, request.request_id)}"
 
@@ -287,25 +261,3 @@ class OpenAIServingChatWithTokens(OpenAIServingChat):
             raise  # Let FastAPI's global generation_error_handler handle it
         except ValueError as e:
             return self.create_error_response(e)
-
-    async def create_chat_completion_with_tokens(
-        self,
-        request: ChatCompletionRequestWithTokens,
-        raw_request: Optional[Request] = None,
-    ) -> Union[AsyncGenerator[str, None], ChatCompletionResponse, ErrorResponse]:
-        return await self._create_chat_completion_with_prompt_override(
-            request,
-            raw_request,
-            prompt_token_ids=request.tokens,
-        )
-
-    async def create_chat_completion_with_suffix_tokens(
-        self,
-        request: ChatCompletionRequestWithSuffixTokens,
-        raw_request: Optional[Request] = None,
-    ) -> Union[AsyncGenerator[str, None], ChatCompletionResponse, ErrorResponse]:
-        return await self._create_chat_completion_with_prompt_override(
-            request,
-            raw_request,
-            tokens_suffix=request.tokens_suffix,
-        )
