@@ -127,7 +127,7 @@ class OpenAIServingChatWithTokens(OpenAIServingChat):
 
         conversation, engine_prompts = result
 
-        if request.use_messages is not None:
+        if request.use_messages:
             prompt_components: PromptComponents = self._extract_prompt_components(engine_prompts[0])
             prompt_token_ids = prompt_components.token_ids
             assert prompt_token_ids is not None
