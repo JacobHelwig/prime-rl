@@ -137,6 +137,7 @@ from prime_rl.inference.patches import (
     monkey_patch_tokenize_params_validation,
 )
 from prime_rl.inference.vllm.serving_chat_with_tokens import (
+    ChatCompletionRequestWithSuffixTokens,
     ChatCompletionRequestWithTokens,
     OpenAIServingChatWithTokens,
 )
@@ -249,6 +250,35 @@ async def _chat_with_tokens(request: ChatCompletionRequestWithTokens, raw_reques
         return base(raw_request).create_error_response(message="The model does not support Chat Completions API")
     try:
         generator = await handler.create_chat_completion_with_tokens(request, raw_request)
+    except Exception as e:
+        raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
+    if isinstance(generator, ErrorResponse):
+        return JSONResponse(content=generator.model_dump(), status_code=generator.error.code)
+
+    elif isinstance(generator, ChatCompletionResponse):
+        return JSONResponse(content=generator.model_dump())
+
+    return StreamingResponse(content=generator, media_type="text/event-stream")
+
+
+@router.post(
+    "/v1/chat/completions/suffix_tokens",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.OK.value: {"content": {"text/event-stream": {}}},
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.NOT_FOUND.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
+@with_cancellation
+@load_aware_call
+async def _chat_with_suffix_tokens(request: ChatCompletionRequestWithSuffixTokens, raw_request: Request):
+    handler = chat_with_tokens(raw_request)
+    if handler is None:
+        return base(raw_request).create_error_response(message="The model does not support Chat Completions API")
+    try:
+        generator = await handler.create_chat_completion_with_suffix_tokens(request, raw_request)
     except Exception as e:
         raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=str(e)) from e
     if isinstance(generator, ErrorResponse):
