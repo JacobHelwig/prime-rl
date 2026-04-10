@@ -161,7 +161,6 @@ def _tokenize_step_from_messages(
         tools=tools,
         processor=processor,
     )
-    mm_token_type_ids = _create_mm_token_type_ids_single(processor, full_ids) if processor is not None else None
 
     split_idx = _common_prefix_len(prompt_ids, full_ids)
     original_prompt_len = len(prompt_ids)
