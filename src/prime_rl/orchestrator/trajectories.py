@@ -57,18 +57,6 @@ def _common_prefix_len(a: list[int], b: list[int]) -> int:
     return common_prefix_len(a, b)
 
 
-def _create_mm_token_type_ids_single(processor, input_ids: list[int]) -> list[int] | None:
-    create_fn = getattr(processor, "create_mm_token_type_ids", None)
-    if create_fn is None:
-        return None
-    mm_token_type_ids = create_fn([input_ids])
-    assert len(mm_token_type_ids) == 1, (
-        "processor.create_mm_token_type_ids must return exactly one sequence "
-        f"for a single input sequence, got {len(mm_token_type_ids)}"
-    )
-    return list(mm_token_type_ids[0])
-
-
 def _normalize_messages(messages: Any, default_role: str) -> list[dict[str, Any]]:
     return normalize_messages(messages, default_role)
 
