@@ -14,6 +14,7 @@ from vllm.exceptions import VLLMValidationError
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.reasoning import ReasoningParser
+from vllm.renderers.inputs.preprocess import PromptComponents
 from vllm.sampling_params import BeamSearchParams, SamplingParams
 
 logger = init_logger(__name__)
@@ -46,6 +47,7 @@ class _RoutedExpertsCapture:
 class ChatCompletionRequestWithTokens(ChatCompletionRequest):
     field_names: ClassVar[Optional[set[str]]] = None
     tokens: list[int] = Field(description=("Prompt tokens to use for the request."))
+    use_messages: bool = False
 
 
 class OpenAIServingChatWithTokens(OpenAIServingChat):
@@ -125,6 +127,12 @@ class OpenAIServingChatWithTokens(OpenAIServingChat):
             return result
 
         conversation, engine_prompts = result
+
+        if request.use_messages:
+            prompt_components: PromptComponents = self._extract_prompt_components(engine_prompts[0])
+            prompt_token_ids = prompt_components.token_ids
+            assert prompt_token_ids is not None
+            request.tokens = prompt_token_ids + request.tokens
 
         # We override prompt tokens directly.
         # VLM conversations use MITO (message-based) instead of TITO, so

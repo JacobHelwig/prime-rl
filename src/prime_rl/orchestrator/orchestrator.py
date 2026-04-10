@@ -3,6 +3,7 @@ import gc
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 
 import tomli_w
 
@@ -31,7 +32,6 @@ monkey_patch_chat_completion_logprobs()
 
 import pandas as pd
 import verifiers as vf
-from transformers import AutoProcessor, AutoTokenizer
 
 from prime_rl.configs.orchestrator import OrchestratorConfig
 from prime_rl.orchestrator.buffer import Buffer
@@ -66,6 +66,7 @@ from prime_rl.utils.utils import (
     resolve_latest_ckpt_step,
     to_col_format,
 )
+from transformers import AutoProcessor, AutoTokenizer
 
 # Hard wall-clock budget for the orchestrator's post-training cleanup. If the
 # graceful shutdown sequence (scheduler / inference pool / env teardown) is
@@ -400,6 +401,13 @@ async def orchestrate(config: OrchestratorConfig):
         generate_completions_time = scheduler.last_batch_generation_time
         train_rollouts = train_task.result()
 
+        messages_by_rollout = None
+        # Save prompt messages for input to teacher server
+        if config.teacher_model and teacher_inference_pool:
+            messages_by_rollout = [
+                [deepcopy(step.get("prompt")) for step in rollout.get("trajectory", [])] for rollout in train_rollouts
+            ]
+
         # VLM: offload base64 images to disk immediately to free memory
         if is_vlm:
             offload_start = time.perf_counter()
@@ -448,7 +456,10 @@ async def orchestrate(config: OrchestratorConfig):
 
         # Process rollouts in parallel
         def process_rollout(rollout: vf.RolloutOutput, rollout_idx: int) -> list[TrainingSample] | None:
-            return interleave_rollout(rollout, vlm_cache=vlm_cache, cache_key=rollout_idx)
+            messages_by_step = messages_by_rollout[rollout_idx] if messages_by_rollout is not None else None
+            return interleave_rollout(
+                rollout, vlm_cache=vlm_cache, cache_key=rollout_idx, messages_by_step=messages_by_step
+            )
 
         loop = asyncio.get_event_loop()
         futures = [
@@ -504,6 +515,11 @@ async def orchestrate(config: OrchestratorConfig):
                 train_example.teacher_logprobs = teacher_logprobs
             teacher_logprobs_time = time.perf_counter() - teacher_logprobs_start_time
             logger.debug(f"Computed teacher logprobs in {teacher_logprobs_time:.2f}s")
+
+        # Remove teacher inputs from training examples
+        for train_example in train_examples:
+            train_example.prompt_messages = None
+            train_example.distill_completion_ids = None
 
         training_batch = TrainingBatch(
             examples=train_examples,

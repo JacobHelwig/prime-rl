@@ -1,3 +1,5 @@
+from typing import Any
+
 import msgspec
 
 
@@ -24,6 +26,10 @@ class TrainingSample(msgspec.Struct, array_like=True, gc=False, omit_defaults=Tr
     routed_experts: list[list[list[int]]] | None = None  # [seq_len, layers, topk]
     # mm_token_type_ids: multimodal token type ids aligned with prompt_ids + completion_ids
     mm_token_type_ids: list[int] | None = None
+
+    # Inputs for teacher model server
+    prompt_messages: list[dict[str, Any]] | None = None
+    distill_completion_ids: list[int] | None = None
 
 
 class TrainingBatch(msgspec.Struct, array_like=True, gc=False, omit_defaults=True):

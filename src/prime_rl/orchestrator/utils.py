@@ -80,13 +80,16 @@ async def compute_teacher_logprobs(
 
     async def _compute_single(client_config: vf.ClientConfig, sample: TrainingSample) -> list[float]:
         client = setup_openai_client(client_config)
+        assert sample.prompt_messages is not None
+        assert sample.distill_completion_ids is not None
 
         response = await client.post(
             "/chat/completions/tokens",
             body={
                 "model": model_name,
-                "messages": [{"role": "user", "content": ""}],
-                "tokens": sample.prompt_ids + sample.completion_ids,
+                "messages": sample.prompt_messages,
+                "tokens": sample.distill_completion_ids,
+                "use_messages": True,
                 "max_tokens": 1,
                 "temperature": 1.0,
                 "top_p": 1.0,
