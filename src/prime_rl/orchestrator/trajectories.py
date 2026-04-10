@@ -169,7 +169,7 @@ def _tokenize_step_from_messages(
     completion_ids = full_ids[split_idx:]
     completion_mask = [True] * len(completion_ids)
     completion_logprobs = [0.0] * len(completion_ids)
- 
+
     return {
         "prompt_ids": prompt_ids,
         "prompt_mask": [False] * len(prompt_ids),
