@@ -11,6 +11,7 @@ from prime_rl.orchestrator.eval_utils import compute_eval_ckpt_step
 from prime_rl.orchestrator.event_loop_lag import EventLoopLagMonitor
 from prime_rl.orchestrator.patches import monkey_patch_chat_completion_logprobs, monkey_patch_oai_iterable_types
 from prime_rl.orchestrator.trajectories import (
+    TeacherContext,
     build_vlm_image_cache,
     interleave_rollout,
     offload_images_to_disk,
@@ -459,7 +460,9 @@ async def orchestrate(config: OrchestratorConfig):
             mm_token_type_ids_mapping = None
 
         # Process rollouts in parallel
-        def process_rollout(rollout: vf.RolloutOutput, rollout_idx: int) -> list[TrainingSample] | None:
+        def process_rollout(
+            rollout: vf.RolloutOutput, rollout_idx: int
+        ) -> list[tuple[TrainingSample, TeacherContext | None]] | None:
             messages_by_step = messages_by_rollout[rollout_idx] if messages_by_rollout is not None else None
             return interleave_rollout(
                 rollout,
@@ -475,17 +478,18 @@ async def orchestrate(config: OrchestratorConfig):
 
         # Collect results and assign advantages
         train_examples: list[TrainingSample] = []
+        teacher_contexts: list[TeacherContext] = []
         rollout_prefill_lens: list[int] = []
         rollout_decode_lens: list[int] = []
         rollout_samples_per_rollout: list[int] = []
         num_prefill_tokens = 0
         num_decode_tokens = 0
-        for rollout, samples in zip(train_rollouts, results):
+        for rollout, samples_with_context in zip(train_rollouts, results):
             rollout_prefill_tokens = 0
             rollout_decode_tokens = 0
-            if samples is not None:
-                rollout_samples_per_rollout.append(len(samples))
-                for sample in samples:
+            if samples_with_context is not None:
+                rollout_samples_per_rollout.append(len(samples_with_context))
+                for sample, teacher_context in samples_with_context:
                     sample.advantage = rollout["advantage"]
                     sample.reward = rollout["reward"]
                     sample_decode_tokens = sum(sample.completion_mask)
@@ -493,6 +497,8 @@ async def orchestrate(config: OrchestratorConfig):
                     rollout_decode_tokens += sample_decode_tokens
                     rollout_prefill_tokens += sample_prefill_tokens
                     train_examples.append(sample)
+                    if teacher_context is not None:
+                        teacher_contexts.append(teacher_context)
             else:
                 rollout_samples_per_rollout.append(0)
             rollout_prefill_lens.append(rollout_prefill_tokens)
@@ -510,21 +516,17 @@ async def orchestrate(config: OrchestratorConfig):
         teacher_logprobs_time = 0
         if config.teacher_model and teacher_inference_pool:
             logger.info(f"Computing teacher logprobs for {len(train_examples)} training examples")
+            assert len(train_examples) == len(teacher_contexts)
             teacher_logprobs_start_time = time.perf_counter()
             teacher_logprobs_list = await compute_teacher_logprobs(
                 clients=teacher_inference_pool.train_clients,
                 model_name=config.teacher_model.model.name,
-                samples=train_examples,
+                contexts=teacher_contexts,
             )
             for train_example, teacher_logprobs in zip(train_examples, teacher_logprobs_list):
                 train_example.teacher_logprobs = teacher_logprobs
             teacher_logprobs_time = time.perf_counter() - teacher_logprobs_start_time
             logger.debug(f"Computed teacher logprobs in {teacher_logprobs_time:.2f}s")
-
-        # Remove teacher inputs from training examples
-        for train_example in train_examples:
-            train_example.prompt_messages = None
-            train_example.distill_completion_ids = None
 
         training_batch = TrainingBatch(
             examples=train_examples,

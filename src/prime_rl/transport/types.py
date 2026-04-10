@@ -1,5 +1,3 @@
-from typing import Any
-
 import msgspec
 
 
@@ -27,10 +25,6 @@ class TrainingSample(msgspec.Struct, array_like=True, gc=False, omit_defaults=Tr
 
     # mm_token_type_ids: token type ids per token [batch seq], int64 (0=text, 1=image, 2=video)
     mm_token_type_ids: list[int] | None = None
-
-    # Inputs for teacher model server
-    prompt_messages: list[dict[str, Any]] | None = None
-    distill_completion_ids: list[int] | None = None
 
 
 class TrainingBatch(msgspec.Struct, array_like=True, gc=False, omit_defaults=True):

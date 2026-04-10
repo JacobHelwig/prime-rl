@@ -2,6 +2,7 @@ import base64
 import hashlib
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,12 @@ from prime_rl.utils.logger import get_logger
 
 # We use list() instead of deepcopy() for flat lists (token IDs, logprobs) - safe because
 # primitives are immutable. pixel_values/image_grid_thw are not mutated after creation.
+
+
+@dataclass(frozen=True)
+class TeacherContext:
+    prompt_messages: list[dict[str, Any]]
+    distill_completion_ids: list[int]
 
 
 def _align_routed_experts(
@@ -252,7 +259,7 @@ def interleave_rollout(
     cache_key: int | None = None,
     mm_token_type_ids_mapping: dict[int, int] | None = None,
     messages_by_step: list[list[dict[str, Any]] | None] | None = None,
-) -> list[TrainingSample] | None:
+) -> list[tuple[TrainingSample, TeacherContext | None]] | None:
     """
     Convert vf.RolloutOutput to trainable rollouts by interleaving trajectory steps
     where the extension property holds.
@@ -341,15 +348,8 @@ def interleave_rollout(
             mm_token_type_ids=list(tokens["mm_token_type_ids"])
             if tokens.get("mm_token_type_ids") is not None
             else None,
-            prompt_messages=None,
-            distill_completion_ids=None,
             routed_experts=routed_experts,
         )
-
-    def set_teacher_context(sample: TrainingSample, step_idx: int) -> None:
-        if messages_by_step is not None:
-            sample.prompt_messages = messages_by_step[step_idx]
-        sample.distill_completion_ids = list(prepared_steps[step_idx]["completion_ids"])
 
     def extend_sample(sample: TrainingSample, prefix_len: int, step_idx: int) -> None:
         """Extend an existing sample with a new trajectory step (extension property holds)."""
@@ -392,9 +392,7 @@ def interleave_rollout(
 
     first_tokens = prepared_steps[0]
     first_prefix = first_tokens["prompt_ids"] + first_tokens["completion_ids"]
-    first_sample = make_sample(first_tokens)
-    set_teacher_context(first_sample, step_idx=0)
-    active_samples.append([first_prefix, first_sample, 0])
+    active_samples.append((first_prefix, make_sample(first_tokens), 0))
 
     for step_idx, _step in enumerate(trajectory[1:], start=1):
         tokens = prepared_steps[step_idx]
@@ -411,7 +409,6 @@ def interleave_rollout(
             # Extension holds - merge into matched sample
             prefix_tokens, sample, _ = active_samples[matched_idx]
             extend_sample(sample, len(prefix_tokens), step_idx=step_idx)
-            set_teacher_context(sample, step_idx=step_idx)
             active_samples[matched_idx] = (tokens["prompt_ids"] + tokens["completion_ids"], sample, step_idx)
         else:
             # No prefix matches - start a new sample
@@ -420,9 +417,7 @@ def interleave_rollout(
                 f"Starting new sample (active_prefixes={len(active_samples)}, step_prompt_len={len(step_prompt_ids)})."
             )
             new_prefix = tokens["prompt_ids"] + tokens["completion_ids"]
-            new_sample = make_sample(tokens)
-            set_teacher_context(new_sample, step_idx=step_idx)
-            active_samples.append([new_prefix, new_sample, step_idx])
+            active_samples.append((new_prefix, make_sample(tokens), step_idx))
 
     # Attach images once per sample using only the last merged step
     if vlm_cache is not None:
@@ -437,7 +432,19 @@ def interleave_rollout(
                     mm_token_type_ids_mapping.get(token_id, 0) for token_id in sample.prompt_ids + sample.completion_ids
                 ]
 
-    return [sample for _, sample, _ in active_samples]
+    samples_with_context: list[tuple[TrainingSample, TeacherContext | None]] = []
+    for _, sample, last_step_idx in active_samples:
+        teacher_context = None
+        if messages_by_step is not None:
+            prompt_messages = messages_by_step[last_step_idx]
+            assert prompt_messages is not None
+            teacher_context = TeacherContext(
+                prompt_messages=prompt_messages,
+                distill_completion_ids=list(prepared_steps[last_step_idx]["completion_ids"]),
+            )
+        samples_with_context.append((sample, teacher_context))
+
+    return samples_with_context
 
 
 # =============================================================================

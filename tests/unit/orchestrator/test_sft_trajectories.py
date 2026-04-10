@@ -2,7 +2,15 @@ from unittest.mock import MagicMock
 
 import verifiers as vf
 
-from prime_rl.orchestrator.trajectories import interleave_rollout, pretokenize_rollout_trajectory
+from prime_rl.orchestrator.trajectories import interleave_rollout as interleave_rollout_with_teacher_context
+from prime_rl.orchestrator.trajectories import pretokenize_rollout_trajectory
+
+
+def interleave_rollout(*args, **kwargs):
+    rollouts = interleave_rollout_with_teacher_context(*args, **kwargs)
+    if rollouts is None:
+        return None
+    return [sample for sample, _ in rollouts]
 
 
 class SimpleChatTokenizer:

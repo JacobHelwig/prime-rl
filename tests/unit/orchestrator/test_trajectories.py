@@ -15,7 +15,9 @@ from prime_rl.orchestrator.trajectories import (
     _extract_images_from_messages,
     _ImageStore,
     build_vlm_image_cache,
-    interleave_rollout,
+)
+from prime_rl.orchestrator.trajectories import (
+    interleave_rollout as interleave_rollout_with_teacher_context,
 )
 
 
@@ -28,6 +30,13 @@ def _pixels(data: list[list[float]]) -> tuple[bytes, list[int]]:
 def _decode_pixels(pixel_bytes: bytes, shape: list[int]) -> list[list[float]]:
     """Decode raw pixel bytes back to nested list for assertions."""
     return np.frombuffer(pixel_bytes, dtype=np.float32).reshape(shape).tolist()
+
+
+def interleave_rollout(*args, **kwargs):
+    rollouts = interleave_rollout_with_teacher_context(*args, **kwargs)
+    if rollouts is None:
+        return None
+    return [sample for sample, _ in rollouts]
 
 
 def test_deserialize_tool_calls_does_not_inject_missing_key():

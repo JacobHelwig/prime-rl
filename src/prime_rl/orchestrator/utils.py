@@ -13,7 +13,7 @@ from rich.table import Table
 from verifiers.utils.client_utils import setup_openai_client
 
 from prime_rl.configs.orchestrator import OrchestratorConfig
-from prime_rl.transport import TrainingSample
+from prime_rl.orchestrator.trajectories import TeacherContext
 from prime_rl.utils.logger import get_logger
 from prime_rl.utils.utils import (
     format_time,
@@ -82,21 +82,19 @@ def print_benchmark(history: dict[str, list[Any]]) -> None:
 async def compute_teacher_logprobs(
     clients: list[vf.ClientConfig],
     model_name: str,
-    samples: list[TrainingSample],
+    contexts: list[TeacherContext],
 ) -> list[list[float]]:
     """Compute teacher model logprobs for a batch of training samples via prefill."""
 
-    async def _compute_single(client_config: vf.ClientConfig, sample: TrainingSample) -> list[float]:
+    async def _compute_single(client_config: vf.ClientConfig, context: TeacherContext) -> list[float]:
         client = setup_openai_client(client_config)
-        assert sample.prompt_messages is not None
-        assert sample.distill_completion_ids is not None
 
         response = await client.post(
             "/chat/completions/tokens",
             body={
                 "model": model_name,
-                "messages": sample.prompt_messages,
-                "tokens": sample.distill_completion_ids,
+                "messages": context.prompt_messages,
+                "tokens": context.distill_completion_ids,
                 "use_messages": True,
                 "max_tokens": 1,
                 "temperature": 1.0,
@@ -111,7 +109,9 @@ async def compute_teacher_logprobs(
             for lp in getattr(response, "prompt_logprobs", [])
         ]
 
-    return await asyncio.gather(*[_compute_single(client, sample) for client, sample in zip(cycle(clients), samples)])
+    return await asyncio.gather(
+        *[_compute_single(client, context) for client, context in zip(cycle(clients), contexts)]
+    )
 
 
 def get_weight_dir(output_dir: Path, step: int, check_exists: bool = True, wait_timeout: int | None = None) -> Path:
