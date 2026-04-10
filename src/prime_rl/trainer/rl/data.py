@@ -36,7 +36,7 @@ class TensorMicroBatch(TypedDict):
     pixel_values: Float[Tensor, "num_patches patch_dim"] | None
     # image_grid_thw: grid dimensions [num_images, 3] where each entry is [temporal, height, width]
     image_grid_thw: Int[Tensor, "num_images 3"] | None
-    # mm_token_type_ids: multimodal token types aligned with input_ids
+    # mm_token_type_ids: token type per token [batch seq], int64 (0=text, 1=image, 2=video)
     mm_token_type_ids: Int[Tensor, "batch seq"] | None
 
 
