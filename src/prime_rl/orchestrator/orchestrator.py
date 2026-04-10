@@ -460,10 +460,13 @@ async def orchestrate(config: OrchestratorConfig):
 
         # Process rollouts in parallel
         def process_rollout(rollout: vf.RolloutOutput, rollout_idx: int) -> list[TrainingSample] | None:
-            # TODO
             messages_by_step = messages_by_rollout[rollout_idx] if messages_by_rollout is not None else None
             return interleave_rollout(
-                rollout, vlm_cache=vlm_cache, cache_key=rollout_idx, mm_token_type_ids_mapping=mm_token_type_ids_mapping
+                rollout,
+                vlm_cache=vlm_cache,
+                cache_key=rollout_idx,
+                mm_token_type_ids_mapping=mm_token_type_ids_mapping,
+                messages_by_step=messages_by_step,
             )
 
         results = await asyncio.gather(

@@ -251,6 +251,7 @@ def interleave_rollout(
     vlm_cache: "VLMImageCache | None" = None,
     cache_key: int | None = None,
     mm_token_type_ids_mapping: dict[int, int] | None = None,
+    messages_by_step: list[list[dict[str, Any]] | None] | None = None,
 ) -> list[TrainingSample] | None:
     """
     Convert vf.RolloutOutput to trainable rollouts by interleaving trajectory steps
@@ -343,7 +344,6 @@ def interleave_rollout(
             prompt_messages=None,
             distill_completion_ids=None,
             routed_experts=routed_experts,
-            mm_token_type_ids=None,
         )
 
     def set_teacher_context(sample: TrainingSample, step_idx: int) -> None:
