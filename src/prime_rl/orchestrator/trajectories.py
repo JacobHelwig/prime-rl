@@ -176,7 +176,6 @@ def _tokenize_step_from_messages(
         "completion_ids": completion_ids,
         "completion_mask": completion_mask,
         "completion_logprobs": completion_logprobs,
-        "mm_token_type_ids": mm_token_type_ids,
         "routed_experts": None,
         "prompt_prefix_len": split_idx,
         "original_prompt_len": original_prompt_len,
@@ -218,11 +217,6 @@ def pretokenize_rollout_trajectory(
 
     for step_idx, step in enumerate(output["trajectory"]):
         if step["tokens"] is not None:
-            if processor is not None:
-                full_ids = list(step["tokens"]["prompt_ids"]) + list(step["tokens"]["completion_ids"])
-                mm_token_type_ids = _create_mm_token_type_ids_single(processor, full_ids)
-                if mm_token_type_ids is not None:
-                    step["tokens"]["mm_token_type_ids"] = mm_token_type_ids
             continue
 
         reconstructed = _tokenize_step_from_messages(step, tokenizer, tools=tools, processor=processor)
@@ -294,9 +288,6 @@ def interleave_rollout(
                 "completion_ids": list(tokens["completion_ids"]),
                 "completion_mask": [bool(i) for i in tokens["completion_mask"]],
                 "completion_logprobs": list(tokens["completion_logprobs"]),
-                "mm_token_type_ids": list(tokens["mm_token_type_ids"])
-                if tokens.get("mm_token_type_ids") is not None
-                else None,
                 "routed_experts": tokens.get("routed_experts"),
             }
 
@@ -332,10 +323,8 @@ def interleave_rollout(
             completion_temperatures=[temperature] * len(completion_ids),
             teacher_logprobs=None,
             advantage=None,
-            mm_token_type_ids=list(tokens["mm_token_type_ids"])
-            if tokens.get("mm_token_type_ids") is not None
-            else None,
             routed_experts=routed_experts,
+            mm_token_type_ids=None,
         )
 
     def extend_sample(sample: TrainingSample, prefix_len: int, step_idx: int) -> None:
@@ -370,9 +359,6 @@ def interleave_rollout(
             sample.routed_experts.extend(step_routed[prefix_len:])
             expected_len = len(sample.prompt_ids) + len(sample.completion_ids)
             sample.routed_experts = _align_routed_experts(sample.routed_experts, expected_len)
-
-        if tokens.get("mm_token_type_ids") is not None:
-            sample.mm_token_type_ids = list(tokens["mm_token_type_ids"])
 
     # Track [prefix_tokens, sample, last_step_idx] per active sample
     active_samples: list[tuple[list[int], TrainingSample, int]] = []
