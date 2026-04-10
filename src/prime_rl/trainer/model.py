@@ -23,6 +23,7 @@ from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.fsdp import CPUOffloadPolicy, FSDPModule, MixedPrecisionPolicy, OffloadPolicy, fully_shard
 from torch.distributed.tensor.parallel import parallelize_module
 from torchtitan.distributed.expert_parallel import ExpertParallel
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, GenerationConfig, PretrainedConfig
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.utils.import_utils import is_flash_attn_3_available
 
@@ -53,7 +54,6 @@ from prime_rl.trainer.weights import (
 from prime_rl.trainer.world import get_world
 from prime_rl.utils.logger import get_logger
 from prime_rl.utils.vlm import get_language_model, get_vision_encoder, is_vlm_architecture
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, GenerationConfig, PretrainedConfig
 
 
 def _patch_qwen3_5_moe_conversion_mapping():
@@ -887,7 +887,6 @@ def forward(
     # using image_grid_thw. Qwen3-VL only computes proper MRoPE when position_ids is None.
     if pixel_values is not None:
         assert image_grid_thw is not None, "pixel_values requires image_grid_thw for MRoPE computation"
-        assert mm_token_type_ids is not None, "pixel_values requires mm_token_type_ids for MRoPE computation"
         kwargs["pixel_values"] = pixel_values
         kwargs["image_grid_thw"] = image_grid_thw
         kwargs["mm_token_type_ids"] = mm_token_type_ids
